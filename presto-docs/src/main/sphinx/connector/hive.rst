@@ -338,6 +338,66 @@ the ``org.apache.hadoop.conf.Configurable`` interface from the Hadoop Java API, 
 will be passed in after the object instance is created and before it is asked to provision or retrieve any
 encryption keys.
 
+# S3SelectPushdown (S3 Select Presto Support)
+
+_**Introduction**_
+S3SelectPushdown is a feature of Amazon S3 Select that enables Presto users to push down projection (SELECT) and predicate (WHERE) processing to S3 Select. This feature enables users to retrieve only the data from Amazon S3 that they want to query with Presto, instead of retrieving full objects. S3SelectPushdown thus reduces both latency and required bandwidth when running Presto queries against Amazon S3 objects.
+
+_**Enabling S3SelectPushdown**_
+You can enable and configure S3SelectPushdown for your Presto installation by setting the following configuration value:
+`[`
+`    {`
+`        "classification": "presto-connector-hive",`
+`        "properties": ``{"hive.s3select-pushdown.enabled": "true", "hive.s3select-pushdown.max-connections":"500"}`
+`    }`
+`]`
+
+_**Restrictions and Limitations**_
+
+* S3SelectPushdown currently works only with objects stored in CSV format. Objects can be uncompressed or optionally compressed with GZIP or BZIP2.
+* S3SelectPushdown does not support the `AllowQuotedRecordDelimiters `field. If this field is specified, the query will fail.
+* S3SelectPushdown does not push down timestamp, double, or float predicates to S3 Select. You should use DECIMAL for numerical data.
+* S3SelectPushdown does not support Server-Side Encryption with Customer-Provided Keys (SSE-C) or Client-Side Encryption. For more information about using encryption with Amazon S3, see [Protecting Data Using Encryption](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingEncryption.html).
+* S3SelectPushdown is not a substitute for using columnar or compressed file formats such as ORC or Parquet.
+
+
+_**S3SelectPushdown Performance**_
+The following charts and raw data demonstrate the performance of bare queries vs. queries processed through S3SelectPushdown. The benchmark Presto cluster used 1 master node with 40 core nodes. Each node was r4.4xlarge. The data provided are the mean values for n=20 runs of each query. The data set is the [TPC-DS 100](http://www.tpc.org/information/sessions/tpc_ds.pdf), used with a shard size of 2 MiB.
+Raw data:
+
+|	|Without S3SelectPushdown	|With S3SelectPushdown	|Percent Change	|
+|---	|---	|---	|---	|
+|Query	|Mean Runtime (s)	|Mean CPU Time (s)	|Mean Raw Input Size (MiB)	|Mean Runtime (s)	|Mean CPU Time (s)	|Mean Raw Input Size (MiB)	|** **Mean Runtime** **	|** **Mean CPU Time** **	|** **Mean Raw Input Size** **	|
+|TPCDS_QUERY_2MiB_44	|21.10	|5788	|51,500	|22.56	|191	|** **231	|6.92	|-96.70	|-99.55	|
+|TPCDS_QUERY_2MiB_46	|18.38	|2907	|35,908	|13.17	|2691	|** **35,831	|-28.38	|-7.44	|-0.21	|
+|TPCDS_QUERY_2MiB_47	|15.41	|1951	|20,141	|9.33	|1237	|** **13,144	|-39.47	|-36.61	|-34.74	|
+|TPCDS_QUERY_2MiB_42	|13.03	|1947	|20,141	|8.57	|1237	|** **13,143	|-34.26	|-36.44	|-34.75	|
+|TPCDS_QUERY_2MiB_43	|16.22	|2135	|23,254	|10.12	|1354	|** **15,069	|-37.64	|-36.59	|-35.20	|
+|TPCDS_QUERY_2MiB_17	|23.66	|3843	|45,141	|12.61	|2727	|** **35,742	|-46.72	|-29.04	|-20.82	|
+|TPCDS_QUERY_2MiB_15	|7.79	|1375	|18,762	|7.24	|742	|** **12,230	|-7.11	|-46.00	|-34.81	|
+|TPCDS_QUERY_2MiB_39	|36.38	|3496	|101,414	|21.71	|4660	|** **101,381	|-40.33	|33.28	|-0.03	|
+|TPCDS_QUERY_2MiB_38	|23.87	|3619	|42,059	|13.74	|1782	|** **22,159	|-42.45	|-50.75	|-47.32	|
+|TPCDS_QUERY_2MiB_11	|39.34	|8320	|146,548	|25.54	|6520	|** **130,745	|-35.09	|-21.63	|-10.78	|
+|TPCDS_QUERY_2MiB_34	|15.29	|2163	|27,533	|10.02	|1615	|** **23,346	|-34.49	|-25.33	|-15.20	|
+|TPCDS_QUERY_2MiB_31	|34.72	|7851	|86,763	|20.07	|4773	|** **56,230	|-42.19	|-39.20	|-35.19	|
+|TPCDS_QUERY_2MiB_19	|18.57	|2303	|24,558	|9.82	|1768	|** **20,416	|-47.10	|-23.24	|-16.87	|
+|TPCDS_QUERY_2MiB_28	|41.61	|9897	|77,317	|37.96	|836	|** **1,940	|-8.77	|-91.55	|-97.49	|
+|TPCDS_QUERY_2MiB_29	|21.92	|3849	|45,141	|13.30	|2731	|** **35,742	|-39.33	|-29.04	|-20.82	|
+|TPCDS_QUERY_2MiB_26	|11.31	|1516	|19,041	|8.85	|1094	|** **16,016	|-21.69	|-27.84	|-15.89	|
+|TPCDS_QUERY_2MiB_24	|29.39	|5000	|59,378	|15.86	|3825	|** **49,493	|-46.03	|-23.50	|-16.65	|
+|TPCDS_QUERY_2MiB_25	|19.64	|4022	|46,989	|12.94	|3023	|** **39,707	|-34.10	|-24.83	|-15.50	|
+|TPCDS_QUERY_2MiB_22	|10.46	|1679	|31,338	|11.48	|2253	|** **31,254	|9.79	|34.14	|-0.27	|
+|TPCDS_QUERY_2MiB_7	|20.94	|2904	|31,560	|11.55	|2577	|** **30,990	|-44.83	|-11.26	|-1.81	|
+|TPCDS_QUERY_2MiB_4	|66.90	|14072	|242,163	|44.04	|11864	|** **230,213	|-34.17	|-15.70	|-4.93	|
+|TPCDS_QUERY_2MiB_3	|16.74	|2038	|22,670	|9.87	|1320	|** **15,662	|-41.00	|-35.21	|-30.91	|
+|TPCDS_QUERY_2MiB_2	|14.57	|3668	|38,170	|12.98	|1640	|** **16,294	|-10.92	|-55.27	|-57.31	|
+|TPCDS_QUERY_2MiB_9	|62.07	|21222	|192,347	|71.77	|1162	|** **5,568	|15.63	|-94.53	|-97.11	|
+|TPCDS_QUERY_2MiB_8	|19.96	|2008	|22,024	|8.81	|1251	|** **14,264	|-55.84	|-37.69	|-35.23	|
+
+**_Billing and cost considerations_**
+Requests and responses between your Presto cluster and Amazon S3 using S3SelectPushdown are currently billed at the same rates as for ordinary S3 Select queries. For more information about S3 Select pricing, see [Amazon S3 Pricing](https://aws.amazon.com/s3/pricing/).
+
+
 Table Statistics
 ----------------
 
